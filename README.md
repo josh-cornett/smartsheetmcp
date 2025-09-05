@@ -91,6 +91,33 @@ In this case, the application code will load dotenv itself (we've included `impo
 
 The server will start and display: "Smartsheet MCP Server running on stdio"
 
+### HTTP SSE (for Fast MCP Cloud)
+
+Use SSE transport to run this server over HTTP for Fast MCP Cloud and other HTTP-based MCP clients.
+
+1) Set the transport and (optionally) auth in `.env`:
+
+```
+MCP_TRANSPORT=sse
+PORT=3000
+MCP_SSE_PATH=/sse
+MCP_MESSAGES_PATH=/messages
+# Optional shared secret for Authorization header
+MCP_AUTH_TOKEN=your_shared_token
+```
+
+2) Build and start:
+
+```bash
+npm run build && npm run start:sse
+```
+
+The server will listen on `http://localhost:3000` and expose:
+- `GET /sse`: establishes the SSE event stream (requires `Authorization: Bearer <MCP_AUTH_TOKEN>` when configured)
+- `POST /messages?sessionId=...`: receives messages for the session
+
+Note: The SDK marks SSE as deprecated in favor of Streamable HTTP. Fast MCP Cloud supports SSE; this server remains compatible via the SSE endpoints.
+
 ## Available MCP Tools
 
 ### get_sheet
@@ -347,6 +374,23 @@ const result = await use_mcp_tool({
 
 - `SMARTSHEET_API_KEY`: Your Smartsheet API token (required)
 - `ALLOW_DELETE_TOOLS`: Set to 'true' to enable deletion operations like delete_rows (default: false)
+- `MCP_TRANSPORT`: Transport type (`stdio`|`sse`, default: `stdio`)
+- `PORT`: When `MCP_TRANSPORT=sse`, port the server listens on (default: `3000`)
+- `MCP_SSE_PATH`: When `MCP_TRANSPORT=sse`, SSE path (default: `/sse`)
+- `MCP_MESSAGES_PATH`: When `MCP_TRANSPORT=sse`, messages POST path (default: `/messages`)
+- `MCP_AUTH_TOKEN`: Optional Bearer token; if set, server requires `Authorization: Bearer <token>`
+
+## Fast MCP Cloud
+
+To use this server with Fast MCP Cloud:
+
+1. Run the server in SSE mode and expose it to the cloud (or deploy it):
+   - Base URL: `http(s)://<host>:<port>`
+   - SSE URL: `<base>/sse`
+   - Messages URL: `<base>/messages`
+2. Configure the connector in Fast MCP Cloud to call those URLs.
+3. If you set `MCP_AUTH_TOKEN`, configure Fast MCP Cloud to send `Authorization: Bearer <MCP_AUTH_TOKEN>`.
+4. Ensure `SMARTSHEET_API_KEY` (and `SMARTSHEET_ENDPOINT` if needed) are set in your server environment.
 
 ## Development
 

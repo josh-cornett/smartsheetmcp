@@ -8,8 +8,10 @@
 		"smar-mcp": "./build/index.js"
 	},
 	"scripts": {
-		"build": "tsc && chmod +x build/index.js",
+		"build": "tsc",
 		"start": "node -r dotenv/config build/index.js",
+		"start:stdio": "node -r dotenv/config build/index.js",
+		"start:sse": "node -r dotenv/config build/index.js",
 		"dev": "npm run build && npm run start",
 		"test": "jest",
 		"setup-claude": "node -r dotenv/config scripts/setup-claude-config.js",
@@ -54,11 +56,13 @@
 		"@modelcontextprotocol/sdk": "^1.12.0",
 		"axios": "^1.8.4",
 		"dotenv": "^16.4.7",
+		"express": "^5.0.1",
 		"zod": "^3.24.2"
 	},
 	"devDependencies": {
 		"@commitlint/cli": "^17.8.1",
 		"@commitlint/config-conventional": "^17.8.1",
+		"@types/express": "^5.0.0",
 		"@semantic-release/changelog": "^6.0.3",
 		"@semantic-release/git": "^10.0.1",
 		"@semantic-release/npm": "^12.0.1",

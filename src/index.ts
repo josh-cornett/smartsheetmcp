@@ -2,6 +2,8 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import express from "express";
+import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { z } from "zod";
 import { SmartsheetAPI } from "./apis/smartsheet-api.js";
 import { config } from "dotenv";
@@ -50,8 +52,58 @@ getUserTools(server, api);
 // Tool: Workspace tools
 getWorkspaceTools(server, api); 
 
-// Start the server
+// Start the server with either stdio or SSE transport
 async function main() {
+  const transportMode = (process.env.MCP_TRANSPORT || "stdio").toLowerCase();
+
+  if (transportMode === "sse") {
+    const port = Number(process.env.PORT || 3000);
+    const ssePath = process.env.MCP_SSE_PATH || "/sse";
+    const messagesPath = process.env.MCP_MESSAGES_PATH || "/messages";
+    const authToken = process.env.MCP_AUTH_TOKEN;
+
+    const app = express();
+    app.use(express.json({ limit: "1mb" }));
+
+    // Simple bearer auth middleware if token is configured
+    const requireAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+      if (!authToken) return next();
+      const auth = req.headers["authorization"] || "";
+      const valid = typeof auth === "string" && auth.startsWith("Bearer ") && auth.slice(7) === authToken;
+      if (!valid) return res.status(401).send("Unauthorized");
+      next();
+    };
+
+    // Keep transports per-session for legacy SSE
+    const transports: Record<string, SSEServerTransport> = {};
+
+    // SSE endpoint: establishes the event stream
+    app.get(ssePath, requireAuth, async (req, res) => {
+      const transport = new SSEServerTransport(messagesPath, res);
+      transports[transport.sessionId] = transport;
+
+      res.on("close", () => {
+        delete transports[transport.sessionId];
+      });
+
+      await server.connect(transport);
+    });
+
+    // Messages endpoint: clients POST messages here
+    app.post(messagesPath, requireAuth, async (req, res) => {
+      const sessionId = (req.query.sessionId as string) || "";
+      const transport = transports[sessionId];
+      if (!transport) return res.status(400).send("No transport found for sessionId");
+      await transport.handlePostMessage(req, res, req.body);
+    });
+
+    app.listen(port, () => {
+      console.info(`Smartsheet MCP Server running over SSE on port ${port} (sse: ${ssePath}, messages: ${messagesPath})`);
+    });
+    return;
+  }
+
+  // Default: stdio transport
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.info("Smartsheet MCP Server running on stdio");
