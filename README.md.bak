@@ -520,28 +520,3 @@ When your PR is merged to the main branch, semantic-release will automatically:
 3. Create a GitHub release
 4. Update the CHANGELOG.md file
 
-## Fast MCP Cloud
-
-This repo now supports two deployment options:
-
-- Node server (self-hosted): Use Streamable HTTP `/mcp` or legacy SSE endpoints.
-- Python FastMCP server (hosted on Fast MCP Cloud): Use `server.py` entrypoint.
-
-Deploy on Fast MCP Cloud (Python):
-- Files: `server.py` (entrypoint), `requirements.txt`
-- Entrypoint: `server.py:mcp`
-- Env vars to configure in Cloud:
-  - `SMARTSHEET_API_KEY`: required
-  - `SMARTSHEET_ENDPOINT`: optional, defaults to `https://api.smartsheet.com/2.0`
-  - `ALLOW_DELETE_TOOLS`: set `true` to enable delete tools
-- Tools supported (parity with Node version):
-  - Sheets: get_sheet, get_sheet_by_url, get_sheet_version, get_cell_history, get_row, add_rows, update_rows, delete_rows, get_sheet_location, copy_sheet, create_sheet, create_update_request
-  - Search: search_sheets, search_in_sheet, search_in_sheet_by_url, what_am_i_assigned_to_by_sheet_id, what_am_i_assigned_to_by_sheet_url, search_folders, search_workspaces, search_reports, search_dashboards
-  - Users: get_current_user, get_user, list_users
-  - Workspaces/Folders: get_workspaces, get_workspace, create_workspace, get_folder, create_folder, create_workspace_folder
-  - Discussions: get_discussions_by_sheet_id, get_discussions_by_row_id, create_sheet_discussion, create_row_discussion
-
-Local validation (optional):
-- Ensure Python 3.10+ is installed.
-- Install deps: `python -m pip install -r requirements.txt`
-- Quick inspect: `python -m fastmcp inspect server.py:mcp`

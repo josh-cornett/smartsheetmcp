@@ -4,6 +4,9 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import express from "express";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { SmartsheetAPI } from "./apis/smartsheet-api.js";
 import { config } from "dotenv";
@@ -22,44 +25,49 @@ config();
 const allowDeleteTools = process.env.ALLOW_DELETE_TOOLS === 'true';
 console.info(`Delete operations are ${allowDeleteTools ? 'enabled' : 'disabled'}`);
   
-// Initialize the MCP server
-const server = new McpServer({
-  name: "smartsheet",
-  version: "1.0.0",
-});
-
 // Initialize the direct API client
 const api = new SmartsheetAPI(process.env.SMARTSHEET_API_KEY, process.env.SMARTSHEET_ENDPOINT);
 
-// Tool: Discussion tools
-getDiscussionTools(server, api);
+// Helper to construct a server with all tools registered
+function buildServer() {
+  const server = new McpServer({
+    name: "smartsheet",
+    version: "1.0.0",
+  });
 
-// Tool: Folder tools
-getFolderTools(server, api);
+  // Tool: Discussion tools
+  getDiscussionTools(server, api);
 
-// Tool: Search tools
-getSearchTools(server, api);
+  // Tool: Folder tools
+  getFolderTools(server, api);
 
-// Tool: Sheet tools
-getSheetTools(server, api, allowDeleteTools);
+  // Tool: Search tools
+  getSearchTools(server, api);
 
-// Tool: Update Request tools
-getUpdateRequestTools(server, api);
+  // Tool: Sheet tools
+  getSheetTools(server, api, allowDeleteTools);
 
-// Tool: User tools
-getUserTools(server, api);
+  // Tool: Update Request tools
+  getUpdateRequestTools(server, api);
 
-// Tool: Workspace tools
-getWorkspaceTools(server, api); 
+  // Tool: User tools
+  getUserTools(server, api);
+
+  // Tool: Workspace tools
+  getWorkspaceTools(server, api);
+
+  return server;
+}
 
 // Start the server with either stdio or SSE transport
 async function main() {
   const transportMode = (process.env.MCP_TRANSPORT || "stdio").toLowerCase();
 
-  if (transportMode === "sse") {
+  if (transportMode === "sse" || transportMode === "http") {
     const port = Number(process.env.PORT || 3000);
     const ssePath = process.env.MCP_SSE_PATH || "/sse";
     const messagesPath = process.env.MCP_MESSAGES_PATH || "/messages";
+    const mcpPath = process.env.MCP_HTTP_PATH || "/mcp";
     const authToken = process.env.MCP_AUTH_TOKEN;
 
     const app = express();
@@ -76,6 +84,9 @@ async function main() {
 
     // Keep transports per-session for legacy SSE
     const transports: Record<string, SSEServerTransport> = {};
+    // Streamable HTTP transports and servers by session
+    const streamTransports: Record<string, StreamableHTTPServerTransport> = {};
+    const streamServers: Record<string, ReturnType<typeof buildServer>> = {};
 
     // SSE endpoint: establishes the event stream
     app.get(ssePath, requireAuth, async (req, res) => {
@@ -86,6 +97,7 @@ async function main() {
         delete transports[transport.sessionId];
       });
 
+      const server = buildServer();
       await server.connect(transport);
     });
 
@@ -97,13 +109,67 @@ async function main() {
       await transport.handlePostMessage(req, res, req.body);
     });
 
+    // Streamable HTTP: POST /mcp handles client->server (and opens SSE for notifications)
+    app.post(mcpPath, requireAuth, async (req, res) => {
+      const sessionId = req.headers['mcp-session-id'] as string | undefined;
+      let transport: StreamableHTTPServerTransport;
+
+      if (sessionId && streamTransports[sessionId]) {
+        transport = streamTransports[sessionId];
+      } else if (!sessionId && isInitializeRequest(req.body)) {
+        transport = new StreamableHTTPServerTransport({
+          sessionIdGenerator: () => randomUUID(),
+          onsessioninitialized: (sid) => {
+            streamTransports[sid] = transport;
+          }
+        });
+
+        transport.onclose = () => {
+          if (transport.sessionId) {
+            delete streamTransports[transport.sessionId];
+            delete streamServers[transport.sessionId];
+          }
+        };
+
+        const server = buildServer();
+        if (transport.sessionId) {
+          streamServers[transport.sessionId] = server;
+        }
+        await server.connect(transport);
+      } else {
+        res.status(400).json({
+          jsonrpc: '2.0',
+          error: { code: -32000, message: 'Bad Request: No valid session ID provided' },
+          id: null
+        });
+        return;
+      }
+
+      await transport.handleRequest(req, res, req.body);
+    });
+
+    // Streamable HTTP: GET /mcp for server->client events, DELETE to close
+    const handleSessionRequest: express.RequestHandler = async (req, res) => {
+      const sessionId = req.headers['mcp-session-id'] as string | undefined;
+      if (!sessionId || !streamTransports[sessionId]) {
+        res.status(400).send('Invalid or missing session ID');
+        return;
+      }
+      const transport = streamTransports[sessionId];
+      await transport.handleRequest(req, res);
+    };
+
+    app.get(mcpPath, requireAuth, handleSessionRequest);
+    app.delete(mcpPath, requireAuth, handleSessionRequest);
+
     app.listen(port, () => {
-      console.info(`Smartsheet MCP Server running over SSE on port ${port} (sse: ${ssePath}, messages: ${messagesPath})`);
+      console.info(`Smartsheet MCP Server running over HTTP on port ${port} (mcp: ${mcpPath}); SSE compat (sse: ${ssePath}, messages: ${messagesPath})`);
     });
     return;
   }
 
   // Default: stdio transport
+  const server = buildServer();
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.info("Smartsheet MCP Server running on stdio");
