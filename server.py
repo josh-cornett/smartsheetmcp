@@ -90,8 +90,7 @@ def _client() -> SmartsheetClient:
 # Create FastMCP server instance (discovered by FastMCP Cloud)
 mcp = FastMCP(
     name="smartsheet",
-    version="1.0.0",
-    description="Smartsheet tools via FastMCP (Python)"
+    version="1.0.0"
 )
 
 register_question_tools(mcp, _client)
