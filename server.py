@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field
 import httpx
 import asyncio
 import re
+from question_tools import register_question_tools
 
 
 class SmartsheetClient:
@@ -92,6 +93,8 @@ mcp = FastMCP(
     version="1.0.0",
     description="Smartsheet tools via FastMCP (Python)"
 )
+
+register_question_tools(mcp, _client)
 
 
 # -------------------

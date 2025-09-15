@@ -25,6 +25,7 @@ MCP is a new technology. This integration relies on a SMARTSHEET API token allow
 - Create, update, and delete sheets and rows
 - Create version backups of sheets at specific timestamps
 - Formatted responses optimized for AI consumption
+- Answer lightweight analytical questions about sheet data with automatic summaries
 
 ## Installation
 
@@ -154,6 +155,19 @@ Retrieves the current state of a sheet, including rows, columns, and cells.
 **Parameters:**
 - `sheetId` (string, required): The ID of the sheet to retrieve
 - `include` (string, optional): Comma-separated list of elements to include (e.g., 'format,formulas')
+
+### ask_sheet_question
+
+Provides heuristics-based answers to lightweight analytical questions (totals, averages, counts, highs/lows) using the rows retrieved from a sheet. Useful when you want summary insight instead of dumping entire tables into the LLM.
+
+**Parameters:**
+- `question` (string, required): Natural language prompt describing the insight you need.
+- `sheetId` (string, optional): ID of the sheet to analyze. Provide this or `sheetUrl`.
+- `sheetUrl` (string, optional): Full sheet URL when the numeric ID is unknown.
+- `rowLimit` (number, optional, default: 200): Maximum number of rows the tool retrieves before analysis.
+- `filterText` (string, optional): Case-insensitive substring filter applied to rows prior to analysis.
+
+The response includes the computed `answer`, an `analysis` object summarizing the computation (filters applied, numeric statistics, rows used), and up to five `sampleRows` showing the data that informed the result.
 
 ### get_sheet_version
 
@@ -432,6 +446,15 @@ To use this server with Fast MCP Cloud:
 
 ```bash
 npm run build
+```
+
+### Analytics Tests (Python)
+
+To validate the heuristics-driven sheet summaries, install the Python dependencies and run the pytest suite:
+
+```bash
+pip install -r requirements.txt
+pytest tests/test_question_tools.py
 ```
 
 ### Project Structure
